@@ -1,0 +1,83 @@
+% Read temperature and wind speed data from a public ThingSpeak channel to   
+% calculate wind chill and write it to another ThingSpeak channel. Note that   
+% wind chill calculations are only valid at temperatures less than 50 degrees   
+% Fahrenheit and wind speeds greater than 3 mph. 
+% Learn more about wind chill at http://www.nws.noaa.gov/om/cold/wind_chill.shtml 
+   
+% Channel ID to read data from 
+readChID = 570053; 
+readAPIkey = 'HHH22NGGTJ8RUYVH';
+   
+% Obtain the channel ID and write API key for your channel 
+% Replace [] with your channel ID 
+writeChID = 636335; 
+% Enter your Write API Key between the '' 
+writeAPIKey = '7P3GXZAVUT5DH66X'; 
+% Read allegheny county air data
+ACAirURL = 'http://www.airnowapi.org/aq/observation/zipCode/current/?format=text/csv&zipCode=15132&distance=25&API_KEY=F7E16FA3-609F-4600-B92A-A1FF4D74CAA1';
+try
+    ACAirData = webread(ACAirURL);
+    [rows,cols] = size(ACAirData);
+
+    %ACDataRow = ACAirData.ParameterName == 'PM2.5';
+    display(ACAirData); 
+    for i = 1:rows
+        parmname = ACAirData(i,8);
+        founddata = strcmp(parmname,'PM2.5');
+        display(parmname);
+        if founddata
+            ACaqi=ACAirData(i,9);
+        end
+    end
+catch
+    %tweet about the error
+    %read back the last good value and use it
+end
+
+try
+% Read PM2.5 from purple air channel and calculate AQI category.
+% See https://airnow.gov/index.cfm?action=airnow.calculator
+    data = thingSpeakRead(readChID,'Fields',[2],'NumPoints',2,'ReadKey',readAPIkey,'OutputFormat','table')
+    avgAQI = mean(data.PM25ATM); 
+    display(avgAQI,'Average AQI'); 
+catch
+   %tweet about the error
+   %use the last good reading or turn the light off
+end    
+  
+if avgAQI < 12.1
+    colorVal = "Green";
+    xval = 0.3;
+    yval = 0.6;
+elseif avgAQI < 35.5
+    colorVal = "Yellow";
+    xval = 0.5;
+    yval = 0.5;
+elseif avgAQI< 55.5
+    colorVal = "Orange";
+    xval = 0.575;
+    yval = 0.425;
+else
+    colorVal = "Red";
+    xval = 0.7;
+    yval = 0.3;
+end
+display(xval);
+display(yval);
+
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1],'OutputFormat','table');
+tokenstr = "Bearer "+token{1,2};
+temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ]
+myhdr = cellstr(temptokenarray)
+%display(myhdr);
+url = 'https://api.meethue.com/bridge/dhSYOSDfw2LWxJMTMFnq6Tk0eh6rUutAnyAg5Mo8/lights/6/state';
+try 
+    options = weboptions('RequestMethod','put' ,'HeaderFields', myhdr) 
+    outputdata = struct('on', true, 'bri', 200,'xy', [xval,yval]);
+    display(outputdata);
+    response = webwrite(url,outputdata,options);
+catch
+   %tweet about the error
+    
+end    
+display(response);

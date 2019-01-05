@@ -1,0 +1,17 @@
+% Enter your MATLAB Code below
+import java.security.*;
+mystr = '91b1ee1bfc14e1239d4ee38688711703:e6b5ccb1ad06f17f087ed2ebf20612b4:8b5c4d23fb4deb8c96a72c04ee3de14a';
+newstr = uint8(mystr);
+display(newstr);
+md5 = MessageDigest.getInstance("MD5");
+md5.update(newstr);
+mystr = md5.digest();
+display(mystr);
+d = typecast(mystr, 'uint8');
+% Convert to a hex string.
+str = dec2hex(d)';
+str = lower(str(:)');
+display(str);
+
+%not sure if this return line works.  didn't use it.
+%return String.format("%032x", new BigInteger(1, md5.digest()));

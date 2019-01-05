@@ -1,0 +1,101 @@
+% Enter your MATLAB Code below
+
+% need to make sure access token has expired and refresh token hasn't expired
+
+challengeURL = 'https://api.meethue.com/oauth2/refresh?grant_type=refresh_token';
+%challengeOptions = weboptions('RequestMethod','post');
+%challengeResponse = webread(challengeURL,challengeOptions);
+%RespStr = challengeResponse.WWW-Authenticate;
+%Do error handling here - check for error or missing WWW-Authenticate;
+RespStr = 'Digest realm=”oauth2_client@api.meethue.com”, nonce=”7b6e45de18ac4ee452ee0a0de91dbb10”'
+newstr = string(RespStr);
+asdf = split(newstr,{'=',',','&rdquo'});
+myval = contains(asdf,"Digest realm");
+mynonceval = contains(asdf,"nonce");
+for i=1:3
+    if mynonceval(i)==true
+       noncecell = asdf{i+1};
+       noncecell = extractBetween(noncecell,2,strlength(noncecell)-1);
+    end
+    if myval(i)==true
+        realmcell = asdf{i+1}
+        realmcell = extractBetween(realmcell,2,strlength(realmcell)-1);
+    end
+end
+nonce = string(noncecell);
+realm = string(realmcell);
+display(nonce);
+display(realm);
+uri="/oauth2/refresh";
+
+% need to calculate response
+
+
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
+%tokenstr = "Bearer "+token{1,2};
+%temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ]
+%myhdr = cellstr(temptokenarray)
+
+myClientData = thingSpeakRead(663499,'ReadKey','F7Y5DVH0EF6ZWQ6E','Fields',[1:4],'OutputFormat','table');
+myClientIdCell=myClientData{1,2};
+myClientId = string(myClientIdCell);
+myClientSecretCell = myClientData{1,3};
+myClientSecret = string(myClientSecretCell);
+formatSpec1 = '%s:%s:%s';
+str4Hash1 = sprintf(formatSpec1,myClientId,realm,myClientSecret);
+display(str4Hash1);
+hashA = DataHash(str4Hash1);
+str4Hash2 = 'POST:/oauth2/refresh'; %changed this from "POST:/oauth2/token"
+hashB = DataHash(str4Hash2);
+formatSpec = '%s:%s:%s';
+str4Hash3 = sprintf(formatSpec,hashA,nonce,hashB);
+display("finalHash Input Str");
+display(str4Hash3);
+response = DataHash(str4Hash3);
+
+initialHeaderstr = 'Digest username=%s,realm=%s,nonce=%s,uri=%s,response=%s';
+myDigeststr = sprintf(initialHeaderstr,myClientId,realm,nonce,uri,response);
+
+
+
+tempHdrArray = ["Authorization", myDigeststr;"Content-type", "application/x-www-form-urlencoded" ]
+myhdr = cellstr(tempHdrArray);
+
+refreshurl = 'https://api.meethue.com/oauth2/refresh?grant_type = refresh_token';
+options = weboptions('RequestMethod','POST' ,'HeaderFields', myhdr); 
+
+%get refresh token
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
+tokenstr = token{1,2};
+
+data = struct('refresh_token', tokenstr);
+display(data);
+%response = webwrite(refreshurl,data,options);
+%display(response);
+%newAccessToken = response.access_token;
+%newAccessTokenExp = response.access_token_expires_in;
+%newRefreshToken = response.refresh_token;
+%newRefreshTokenExp = response.refresh_token_expires_in;
+%newTokenType = response.token_type;
+%display(newAccessToken);
+%display(newAccessTokenExp);
+%display(newRefreshToken);
+%display(newRefreshTokenExp);
+%display(newTokenType);
+
+
+
+function Hout = DataHash(mystr)
+import java.security.*;
+%    mystr = '91b1ee1bfc14e1239d4ee38688711703:e6b5ccb1ad06f17f087ed2ebf20612b4:8b5c4d23fb4deb8c96a72c04ee3de14a';
+    newstr = uint8(mystr);
+%display(newstr);
+    md5 = MessageDigest.getInstance("MD5");
+    md5.update(newstr);
+    hashData = md5.digest();
+    d = typecast(hashData, 'uint8');
+    % Convert to a hex string.
+    Hout = dec2hex(d)';
+    Hout = lower(Hout(:)');
+    display(Hout);
+end

@@ -1,0 +1,129 @@
+% Enter your MATLAB Code below
+%to get the access code run this from the python37-32 directory using HTTPie
+%http --print=HBhb GET https://api.meethue.com/oauth2/auth? clientid==ExWVqNNQoX8JCblajnNzCxLgPjlOSc4s appid==testaqidisplay deviceid==pyhttptester state==startauthreq response_type==code devicename==mypypc
+%copy the redirect line into a browser (log into meethue.com first from another tab) then accept the access
+%the second redicrect will not find the location, but copy the code into line 10 below after code=
+%using httpie for line 3 above is the only way to avoid the "must enable json" error - proxy issue?
+
+%get realm and nonce
+method = matlab.net.http.RequestMethod.POST;
+uri = matlab.net.URI('https://api.meethue.com/oauth2/token?code=NUMJmvNT&grant_type=authorization_code');
+request = matlab.net.http.RequestMessage(method);
+
+r = send(request,uri);
+%r.Body.ContentType
+%display(r.Header(1,3));
+RespStr = r.Header(1,3);
+%display(RespStr);
+
+
+%RespStr = 'Digest realm=”oauth2_client@api.meethue.com”, nonce=”7b6e45de18ac4ee452ee0a0de91dbb10”'
+newstr = string(RespStr);
+asdf = split(newstr,{'=',',','&rdquo'});
+myval = contains(asdf,"Digest realm");
+mynonceval = contains(asdf,"nonce");
+for i=1:3
+    if mynonceval(i)==true
+       noncecell = asdf{i+1};
+       noncecell = extractBetween(noncecell,2,strlength(noncecell)-1);
+    end
+    if myval(i)==true
+        realmcell = asdf{i+1};
+        realmcell = extractBetween(realmcell,2,strlength(realmcell)-1);
+    end
+end
+nonce = string(noncecell);
+realm = string(realmcell);
+%display('Realm and nonce:');
+%display(nonce);
+%display(realm);
+miniuri="/oauth2/token";
+
+% need to calculate response
+
+
+%token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
+
+%not sure why the fields are offset by 1 - first field seems to be index
+myClientData = thingSpeakRead(663499,'ReadKey','F7Y5DVH0EF6ZWQ6E','Fields',[1:4],'OutputFormat','table');
+myClientIdCell=myClientData{1,2};
+myClientId = string(myClientIdCell);
+myClientSecretCell = myClientData{1,3};
+myClientSecret = string(myClientSecretCell);
+formatSpec1 = '%s:%s:%s';
+str4Hash1 = sprintf(formatSpec1,myClientId,realm,myClientSecret);
+%display(str4Hash1);
+hashA = DataHash(str4Hash1);
+str4Hash2 = 'POST:/oauth2/token'; %changed this from "POST:/oauth2/token"
+hashB = DataHash(str4Hash2);
+formatSpec = '%s:%s:%s';
+str4Hash3 = sprintf(formatSpec,hashA,nonce,hashB);
+%display("finalHash Input Str");
+%display(str4Hash3);
+response = DataHash(str4Hash3);
+
+initialHeaderstr = 'Digest username="%s",realm="%s",nonce="%s",uri="%s",response="%s"';
+myDigeststr = sprintf(initialHeaderstr,myClientId,realm,nonce,miniuri,response);
+tempHdrArray = ["Authorization:", myDigeststr;"Content-type:", "application/x-www-form-urlencoded" ];
+myhdr = cellstr(tempHdrArray);
+%display(myhdr);
+%display(myDigeststr);
+refreshurl = 'https://api.meethue.com/oauth2/refresh?grant_type=refresh_token';
+%options = weboptions('RequestMethod','POST' ,'HeaderFields', myhdr); 
+
+hdrobj = matlab.net.http.HeaderField("Authorization",myDigeststr); 
+
+%retval = webwrite(refreshurl,data,options);
+wrMethod = matlab.net.http.RequestMethod.POST;
+
+display(uri);
+wrrequest = matlab.net.http.RequestMessage(wrMethod,hdrobj);
+rwr = send(wrrequest,uri);
+%r.Body.ContentType
+display(rwr.StatusLine);
+display(rwr.StatusCode);
+RespStr = rwr.Header;
+[v,w] = size(RespStr);
+display(w);
+bodyStr = rwr.Body.Data;
+
+if (rwr.StatusCode == 200)
+   newAT = bodyStr.access_token;
+   newATExp = bodyStr.access_token_expires_in;
+   newRT = bodyStr.refresh_token;
+   newRTExp = bodyStr.refresh_token_expires_in;
+   newTT = bodyStr.token_type;
+   formatSpec1 = '%s:%s:%s:%s:%s';
+   str2show = sprintf(formatSpec1,newAT,newATExp,newRT,newRTExp,newTT);
+   display(str2show);
+   thingSpeakWrite(663497,{newAT,newATExp,newRT,newRTExp,newTT},'WriteKey','GWNXPPDOOX2JY0Q1');
+end
+
+[x,y] = size(bodyStr);
+%display(y);
+
+field = rwr.Header.getFields('Content-Type');
+value = field.Value;
+display(bodyStr);
+
+for i=1:w   %fix the 13 later
+    display(RespStr(1,i));
+end
+
+%myval=rwr.Header.ContentType;
+%display(myval);
+
+function Hout = DataHash(mystr)
+import java.security.*;
+%    mystr = '91b1ee1bfc14e1239d4ee38688711703:e6b5ccb1ad06f17f087ed2ebf20612b4:8b5c4d23fb4deb8c96a72c04ee3de14a';
+    newstr = uint8(mystr);
+%display(newstr);
+    md5 = MessageDigest.getInstance("MD5");
+    md5.update(newstr);
+    hashData = md5.digest();
+    d = typecast(hashData, 'uint8');
+    % Convert to a hex string.
+    Hout = dec2hex(d)';
+    Hout = lower(Hout(:)');
+    %display(Hout);
+end

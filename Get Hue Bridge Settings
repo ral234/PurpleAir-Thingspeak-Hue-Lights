@@ -1,0 +1,14 @@
+% Enter your MATLAB Code below
+
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1],'OutputFormat','table');
+tokenstr = "Bearer "+token{1,2};
+temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ]
+myhdr = cellstr(temptokenarray)
+%display(myhdr);
+url = 'https://api.meethue.com/bridge/dhSYOSDfw2LWxJMTMFnq6Tk0eh6rUutAnyAg5Mo8/lights/6';
+options = weboptions('RequestMethod','get' ,'HeaderFields', myhdr) 
+%data = struct('on', false);
+response = webread(url,options);
+display(response);
+mybool = response.state.on;
+display(mybool);

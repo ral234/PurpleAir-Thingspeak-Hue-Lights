@@ -7,77 +7,199 @@
 % Channel ID to read data from 
 readChID = 570053; 
 readAPIkey = 'HHH22NGGTJ8RUYVH';
-   
-% Obtain the channel ID and write API key for your channel 
-% Replace [] with your channel ID 
-writeChID = 636335; 
-% Enter your Write API Key between the '' 
-writeAPIKey = '7P3GXZAVUT5DH66X'; 
+% Air Data types:
+particleCount = 1;
+AQIvalue = 2;
+% Air Data sources:
+ACData = 'Allegheny County';  %Allegheny County data from airnow.gov
+PAData = 'McKeesport TRE Sensor'; 
+
+% chanel to store record of values written to lights
+writeChID = 676134; 
+writeAPIKey = 'MRQUALMAAO609QCI'; 
+readACSuccess = false;
+readPASuccess = false;
+writeHueSuccess = false;
+
+
 % Read allegheny county air data
 ACAirURL = 'http://www.airnowapi.org/aq/observation/zipCode/current/?format=text/csv&zipCode=15132&distance=25&API_KEY=F7E16FA3-609F-4600-B92A-A1FF4D74CAA1';
 try
-    ACAirData = webread(ACAirURL);
-    [rows,cols] = size(ACAirData);
-
-    %ACDataRow = ACAirData.ParameterName == 'PM2.5';
-    display(ACAirData); 
-    for i = 1:rows
-        parmname = ACAirData(i,8);
-        founddata = strcmp(parmname,'PM2.5');
-        display(parmname);
-        if founddata
-            ACaqi=ACAirData(i,9);
-        end
-    end
+ACAirData = webread(ACAirURL);
 catch
     %tweet about the error
+    display("got an error reading AC data from airnowapi.org");
+%     myWriteError = 'Error reading AC Air Quality data in Test avg Air quality';
+%     webwrite('http://api.thingspeak.com/apps/thingtweet/1/statuses/update','api_key', '58BKNMMTK8RBV41S', 'status', myWriteError);
     %read back the last good value and use it
+end    
+    
+[rows,cols] = size(ACAirData);
+ACaqi = '1';
+    %ACDataRow = ACAirData.ParameterName == 'PM2.5';
+%display(ACAirData); 
+%display(rows,'rows');
+for i = 1:2
+    parmcell = ACAirData{i,'ParameterName'};
+    parmname = parmcell{1};
+    founddata = strcmp(parmname,'PM2.5');
+    display(parmname);
+    if founddata == true
+       ACaqi=cell2mat(ACAirData{i,'AQI'});
+    end
+    %display('Allegheny County air quality is:');
+    %display(ACaqi);
 end
-
-try
+readACSuccess = true;
+ACOutputData = setLights(ACData, ACaqi);
+display(ACOutputData, 'AC data returned from function');
 % Read PM2.5 from purple air channel and calculate AQI category.
 % See https://airnow.gov/index.cfm?action=airnow.calculator
-    data = thingSpeakRead(readChID,'Fields',[2],'NumPoints',2,'ReadKey',readAPIkey,'OutputFormat','table')
-    avgAQI = mean(data.PM25ATM); 
-    display(avgAQI,'Average AQI'); 
-catch
-   %tweet about the error
-   %use the last good reading or turn the light off
-end    
-  
-if avgAQI < 12.1
-    colorVal = "Green";
-    xval = 0.3;
-    yval = 0.6;
-elseif avgAQI < 35.5
-    colorVal = "Yellow";
-    xval = 0.5;
-    yval = 0.5;
-elseif avgAQI< 55.5
-    colorVal = "Orange";
-    xval = 0.575;
-    yval = 0.425;
-else
-    colorVal = "Red";
-    xval = 0.7;
-    yval = 0.3;
-end
-display(xval);
-display(yval);
 
-token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1],'OutputFormat','table');
+%
+data = thingSpeakRead(readChID,'Fields',[1:5],'NumMinutes',60,'ReadKey',readAPIkey,'OutputFormat','table')
+%display(data, 'PA data from initial read');
+if (isempty(data))
+    display("got empty table");
+    %tweet it
+    avgAQI = 0;
+else
+    %avgAQI = data{1,'PM25ATM'};
+    avgAQI = mean(data.PM25ATM); 
+end
+PAOutputData = setLights(PAData, avgAQI);
+display(PAOutputData,'PAdata returned from function');
+mytime = datetime('now','format','MM/dd/uuuu HH:mm:ss');
+OutputTable = {ACOutputData.aqi, ACOutputData.color, PAOutputData.aqi, PAOutputData.color};
+display(OutputTable);
+writeOKAC = thingSpeakWrite(writeChID,OutputTable,'WriteKey',writeAPIKey,'Timestamp',mytime);
+%writeOKPA = thingSpeakWrite(writeChID,PAOutputData,'WriteKey',writeAPIKey,'Timestamp',mytime);
+display(writeOKAC,'AC write status');
+%display(writeOKPA,'PA write status');
+
+%- updateTime;
+%display(atExpires);
+%display(timeStamp);
+%display(elapsedTimeS);
+
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1:2],'OutputFormat','table');
 tokenstr = "Bearer "+token{1,2};
-temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ]
-myhdr = cellstr(temptokenarray)
+timeStamp = token{1,1};
+atExpires = token{1,3};
+%change dates to date vectors
+nowTime = datetime('now');
+nTvec = datevec(nowTime);
+tSvec = datevec(timeStamp);
+%calculate elapsed time since token was granted
+elapsedTimeS = etime(nTvec, tSvec);
+if elapsedTimeS > atExpires
+   display("token expired");
+   % send a tweet here and renew tokens
+   myWriteError = 'Auth Token expired in Test Avg air quality data';
+   webwrite('http://api.thingspeak.com/apps/thingtweet/1/statuses/update','api_key', '58BKNMMTK8RBV41S', 'status', myWriteError);
+else
+   temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ];
+   myhdr = cellstr(temptokenarray)
+end
 %display(myhdr);
-url = 'https://api.meethue.com/bridge/dhSYOSDfw2LWxJMTMFnq6Tk0eh6rUutAnyAg5Mo8/lights/6/state';
-try 
-    options = weboptions('RequestMethod','put' ,'HeaderFields', myhdr) 
-    outputdata = struct('on', true, 'bri', 200,'xy', [xval,yval]);
-    display(outputdata);
-    response = webwrite(url,outputdata,options);
-catch
-   %tweet about the error
+%need to duplicate this section for second set of lights based on Allegheny County Data
+
+%use this url for kitchen bridge
+%   url = 'https://api.meethue.com/bridge/dhSYOSDfw2LWxJMTMFnq6Tk0eh6rUutAnyAg5Mo8/lights/6/state';
+%use these urls for McKeesport Twin Rivers Elementary Bridge
+ACurl = 'https://api.meethue.com/bridge/OeZFWJjpUDS9BJTaZRJxlSfrrmrVQurUcemPvawN/lights/2/state';
+PAurl = 'https://api.meethue.com/bridge/OeZFWJjpUDS9BJTaZRJxlSfrrmrVQurUcemPvawN/lights/1/state';
+options = weboptions('RequestMethod','put' ,'HeaderFields', myhdr); 
+xAC = ACOutputData.xval;
+yAC = ACOutputData.yval;
+xPA = PAOutputData.xval;
+yPA = PAOutputData.yval;
+%display(yPA,'ypa');
+%[xAC,yAC]=AQITable{1,'x','y'};  %may be able to put this directly in the struct below
+%[xPA,yPA]=AQITable{2,'x','y'};
+
+ACoutputdata = struct('on', true, 'bri', 200,'xy', [xAC,yAC]);
+PAoutputdata = struct('on', true, 'bri', 200,'xy', [xPA,yPA]);
+%display(ACoutputdata);
+ACresponse = webwrite(ACurl,ACoutputdata,options);
+PAresponse = webwrite(PAurl,PAoutputdata,options); 
+display(ACresponse);
+display(PAresponse);
+
+function DataOutput = setLights(srcIn, valIn); 
+    noError = true;
+    AirDataSrc = srcIn;
+    x = 0.175;
+    y = 0.025;
+    color = 'none';
+    %calcAQI = 1.0;
+    numtype = isnumeric(valIn);
+    %display(numtype,'is this a number');
+    if (strcmp(AirDataSrc,'McKeesport TRE Sensor'))
+        if(numtype) 
+           if valIn == 0
+               calcAQI = 1+(valIn/1);
+               %display(calcAQI,'aqi with valIN of 0');
+           elseif valIn < 12.1
+               calcAQI = (50/12)*(valIn)
+               display(calcAQI, 'lowaqi');
+           elseif valIn < 35.5
+               calcAQI = (49/(35.4-12.1))*(valIn-12.1)+51;
+           elseif valIn< 55.5
+               calcAQI = (49/(55.4-35.5))*(valIn-35.5)+101;
+           elseif valIn<150.4
+               calcAQI = (49/(150.4-55.5))*(valIn-55.5)+151;
+           elseif valIn<250.4
+               calcAQI = (99/(250.4-150.5))*(valIn-150.5)+201;
+           elseif valIn < 500.4
+               calcAQI = (199/(500.4-250.5))*(valIn-250.5)+301;
+           else 
+               calcAQI = 501;
+           end
+           %calcAQI = 22;
+           tempval = round(calcAQI);
+          % display(tempval);
+          % tempstr = num2str(tempval,0);
+          % display(tempstr,'PA aqi string');
+        else
+            display('expected a number');
+        end   
+    elseif (strcmp(AirDataSrc,'Allegheny County'))
+        calcAQI = str2double(valIn);
+        tempval = calcAQI;
+        %display(tempval,'temp val forAC');
+    else 
+        noError = false;
+        calcAQI = 1;
+    end
     
-end    
-display(response);
+    if noError==true;
+        if calcAQI <2 
+            color = 'error';
+            x = 0.175;
+            y = 0.025;
+        elseif  calcAQI<51
+            color = 'Green';
+            x = 0.3;
+            y = 0.6;
+        elseif calcAQI < 101
+            color = 'Yellow';
+            x = 0.5;
+            y = 0.5;
+        elseif calcAQI<151
+            color = 'Orange';
+            x = 0.575;
+            y = 0.425;
+        else
+            color = 'Red';
+            x = 0.7;
+            y = 0.3;
+        end    
+    end 
+    DataOutput(1).datasource = AirDataSrc;
+    DataOutput(1).aqi = tempval;
+    DataOutput(1).color = color;
+    DataOutput(1).xval = x;
+    DataOutput(1).yval = y;
+    
+end 

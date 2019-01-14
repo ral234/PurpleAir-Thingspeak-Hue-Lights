@@ -1,95 +1,186 @@
 % Enter your MATLAB Code below
+%get refresh token
+%token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
+
+%data = struct('refresh_token',tokenstr);
+%display(data);
+%myTarget = "Kitchen";
+myTarget = "McKTRE";
 
 % need to make sure access token has expired and refresh token hasn't expired
-
-challengeURL = 'https://api.meethue.com/oauth2/refresh?grant_type=refresh_token';
-%challengeOptions = weboptions('RequestMethod','post');
-%challengeResponse = webread(challengeURL,challengeOptions);
-%RespStr = challengeResponse.WWW-Authenticate;
-%Do error handling here - check for error or missing WWW-Authenticate;
-RespStr = 'Digest realm=”oauth2_client@api.meethue.com”, nonce=”7b6e45de18ac4ee452ee0a0de91dbb10”'
-newstr = string(RespStr);
-asdf = split(newstr,{'=',',','&rdquo'});
-myval = contains(asdf,"Digest realm");
-mynonceval = contains(asdf,"nonce");
-for i=1:3
-    if mynonceval(i)==true
-       noncecell = asdf{i+1};
-       noncecell = extractBetween(noncecell,2,strlength(noncecell)-1);
-    end
-    if myval(i)==true
-        realmcell = asdf{i+1}
-        realmcell = extractBetween(realmcell,2,strlength(realmcell)-1);
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1:6],'NumPoints',2,'OutputFormat','table');
+for i=1:2
+    targetcelltest = token{i,7};
+    targettest = string(targetcelltest);
+    %display(targettest,'target');
+    if strcmp(targettest,myTarget)
+        targetIndex = i;
     end
 end
-nonce = string(noncecell);
-realm = string(realmcell);
-display(nonce);
-display(realm);
-uri="/oauth2/refresh";
+
+%tokenstr = "Bearer "+token{1,2};  %Don't need access token
+timeStamp = token{targetIndex,1};
+atExpires = token{targetIndex,3};
+tokenstr = token{targetIndex,4};  %use refresh token here
+rtExpires = token{targetIndex,5};
+TokenTarget = token{targetIndex,7};
+TTargetStr = string(TokenTarget);
+display(atExpires,'atexpires');
+display(rtExpires,'rtexpires');
+display(TTargetStr,'Token target');
+%change dates to date vectors
+nowTime = datetime('now');
+nTvec = datevec(nowTime);
+tSvec = datevec(timeStamp);
+ATValid = false;
+RTValid = false;
+%calculate elapsed time since token was granted
+elapsedTimeS = etime(nTvec, tSvec);
+display(elapsedTimeS,'elapsed time');
+if elapsedTimeS > (atExpires)
+   display('access token expired');
+   if elapsedTimeS < rtExpires
+       display('refresh token not expired');
+       RTValid = true;
+   else
+       % send a tweet here - need to recreate all tokens
+       myWriteError = 'Refresh Token expired in Test Avg air quality data';
+       webwrite('http://api.thingspeak.com/apps/thingtweet/1/statuses/update','api_key', '58BKNMMTK8RBV41S', 'status', myWriteError);
+   end
+else
+  ATValid = true;
+end
+
+if (ATValid == false)&&(RTValid ==true)
+    bodyStrout = sprintf('refresh_token=%s',string(tokenstr));
+    bodyout = matlab.net.http.MessageBody(bodyStrout);
+    display(bodyStrout,'outgoing message body');
+
+%initiate hue refresh sequence
+    method = matlab.net.http.RequestMethod.POST;
+    uri = matlab.net.URI('https://api.meethue.com/oauth2/refresh?grant_type=refresh_token');
+    request = matlab.net.http.RequestMessage(method);
+    reqHdr = request.Header();
+    r = send(request,uri);
+    RespStr = r.Header(1,3);
+    display(RespStr);
+
+%RespStr = cr.WWW-Authenticate;
+%Do error handling here - check for error or missing WWW-Authenticate;
+%RespStr = 'Digest realm=”oauth2_client@api.meethue.com”, nonce=”7b6e45de18ac4ee452ee0a0de91dbb10”'
+    newstr = string(RespStr);
+    asdf = split(newstr,{'=',',','&rdquo'});
+    myval = contains(asdf,"Digest realm");
+    mynonceval = contains(asdf,"nonce");
+    for i=1:3
+        if mynonceval(i)==true
+           noncecell = asdf{i+1};
+           noncecell = extractBetween(noncecell,2,strlength(noncecell)-1);
+        end
+        if myval(i)==true
+            realmcell = asdf{i+1};
+            realmcell = extractBetween(realmcell,2,strlength(realmcell)-1);
+        end
+    end
+    nonce = string(noncecell);
+    realm = string(realmcell);
+%display('Realm and nonce:');
+    display(nonce,'nonce');
+    display(realm,'realm');
+    miniuri="/oauth2/refresh";
 
 % need to calculate response
 
 
-token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
-%tokenstr = "Bearer "+token{1,2};
-%temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ]
-%myhdr = cellstr(temptokenarray)
+%token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
 
-myClientData = thingSpeakRead(663499,'ReadKey','F7Y5DVH0EF6ZWQ6E','Fields',[1:4],'OutputFormat','table');
-myClientIdCell=myClientData{1,2};
+%not sure why the fields are offset by 1 - first field seems to be index
+%values for kitchen lights
+myClientData = thingSpeakRead(663499,'ReadKey','F7Y5DVH0EF6ZWQ6E','Fields',[1:5],'NumPoints',2,'OutputFormat','table');
+for j=1:2
+    targetcelltest = token{j,6};
+    targettest = string(targetcelltest);
+    %display(targettest,'target');
+    if strcmp(targettest,myTarget)
+        targetIndex = j;
+        display(targetIndex,'Found target at');
+    end
+end
+
+myClientIdCell=myClientData{targetIndex,2};
 myClientId = string(myClientIdCell);
-myClientSecretCell = myClientData{1,3};
+myClientSecretCell = myClientData{targetIndex,3};
 myClientSecret = string(myClientSecretCell);
-formatSpec1 = '%s:%s:%s';
-str4Hash1 = sprintf(formatSpec1,myClientId,realm,myClientSecret);
-display(str4Hash1);
-hashA = DataHash(str4Hash1);
-str4Hash2 = 'POST:/oauth2/refresh'; %changed this from "POST:/oauth2/token"
-hashB = DataHash(str4Hash2);
-formatSpec = '%s:%s:%s';
-str4Hash3 = sprintf(formatSpec,hashA,nonce,hashB);
-display("finalHash Input Str");
-display(str4Hash3);
-response = DataHash(str4Hash3);
+display(myClientId,'client id');
+display(myClientSecret,'secret');
+% Values for McKeesport Twin Rivers Elementary
+%    myClientId = 'O6HjdUEIEqgu5SEH3tv9zgqPff1nQDwH';
+%    myClientSecret = 'TuNJKvsAQHUOXKhg';
 
-initialHeaderstr = 'Digest username=%s,realm=%s,nonce=%s,uri=%s,response=%s';
-myDigeststr = sprintf(initialHeaderstr,myClientId,realm,nonce,uri,response);
+    formatSpec1 = '%s:%s:%s';
+    str4Hash1 = sprintf(formatSpec1,myClientId,realm,myClientSecret);
+    hashA = DataHash(str4Hash1);
+    str4Hash2 = 'POST:/oauth2/refresh'; %changed this from "POST:/oauth2/token"
+    hashB = DataHash(str4Hash2);
+    formatSpec = '%s:%s:%s';
+    str4Hash3 = sprintf(formatSpec,hashA,nonce,hashB);
+    response = DataHash(str4Hash3);
+
+    initialHeaderstr = 'Digest username="%s",realm="%s",nonce="%s",uri="%s",response="%s"';
+    myDigeststr = sprintf(initialHeaderstr,myClientId,realm,nonce,miniuri,response);
+    display(myDigeststr);
+    refreshurl = 'https://api.meethue.com/oauth2/refresh?grant_type=refresh_token';
+    hdrobj = matlab.net.http.HeaderField("Authorization",myDigeststr,"Content-type","application/x-www-form-urlencoded"); 
 
 
+    wrMethod = matlab.net.http.RequestMethod.POST;
+    wruri = matlab.net.URI('https://api.meethue.com/oauth2/refresh?grant_type=refresh_token');
 
-tempHdrArray = ["Authorization", myDigeststr;"Content-type", "application/x-www-form-urlencoded" ]
-myhdr = cellstr(tempHdrArray);
+    display(wruri);
+    display(hdrobj(1),'headers');
+    notdebug = true;
+    if notdebug==true
+        wrrequest = matlab.net.http.RequestMessage(wrMethod,hdrobj,bodyout);
+        rwr = send(wrrequest,wruri);
+        display(rwr.StatusLine);
+        display(rwr.StatusCode);
+        RespStr = rwr.Header;
+        [v,w] = size(RespStr);
+        display(w);
+        bodyStr = rwr.Body.Data;
+    
+        if (rwr.StatusCode == 200)
+           newAT = bodyStr.access_token;
+           newATExp = bodyStr.access_token_expires_in;
+           newRT = bodyStr.refresh_token;
+           newRTExp = bodyStr.refresh_token_expires_in;
+           newTT = bodyStr.token_type;
+           formatSpec1 = '%s:%s:%s:%s:%s:%s';
+           str2show = sprintf(formatSpec1,newAT,newATExp,newRT,newRTExp,newTT,TTargetStr);
+           display(str2show);
+           TTargetCell = cellstr(TTargetStr);
+           thingSpeakWrite(663497,{newAT,newATExp,newRT,newRTExp,newTT,TTargetCell},'WriteKey','GWNXPPDOOX2JY0Q1');
+        end
+        [x,y] = size(bodyStr);
+%display(y);
 
-refreshurl = 'https://api.meethue.com/oauth2/refresh?grant_type = refresh_token';
-options = weboptions('RequestMethod','POST' ,'HeaderFields', myhdr); 
+%field = rwr.Header.getFields('Content-Type');
+%value = field.Value;
+        display(bodyStr);
 
-%get refresh token
-token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[3],'OutputFormat','table');
-tokenstr = token{1,2};
-
-data = struct('refresh_token', tokenstr);
-display(data);
-%response = webwrite(refreshurl,data,options);
-%display(response);
-%newAccessToken = response.access_token;
-%newAccessTokenExp = response.access_token_expires_in;
-%newRefreshToken = response.refresh_token;
-%newRefreshTokenExp = response.refresh_token_expires_in;
-%newTokenType = response.token_type;
-%display(newAccessToken);
-%display(newAccessTokenExp);
-%display(newRefreshToken);
-%display(newRefreshTokenExp);
-%display(newTokenType);
+        for i=1:w   %fix the 13 later
+            display(RespStr(1,i));
+        end
+    end        
+else
+    display('code note expired');
+end
 
 
 
 function Hout = DataHash(mystr)
 import java.security.*;
-%    mystr = '91b1ee1bfc14e1239d4ee38688711703:e6b5ccb1ad06f17f087ed2ebf20612b4:8b5c4d23fb4deb8c96a72c04ee3de14a';
     newstr = uint8(mystr);
-%display(newstr);
     md5 = MessageDigest.getInstance("MD5");
     md5.update(newstr);
     hashData = md5.digest();
@@ -97,5 +188,5 @@ import java.security.*;
     % Convert to a hex string.
     Hout = dec2hex(d)';
     Hout = lower(Hout(:)');
-    display(Hout);
+    %display(Hout);
 end

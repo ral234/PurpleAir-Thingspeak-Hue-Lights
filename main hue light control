@@ -3,7 +3,8 @@
 % wind chill calculations are only valid at temperatures less than 50 degrees   
 % Fahrenheit and wind speeds greater than 3 mph. 
 % Learn more about wind chill at http://www.nws.noaa.gov/om/cold/wind_chill.shtml 
-   
+%myTarget = "Kitchen";
+myTarget = "McKTRE";
 % Channel ID to read data from 
 readChID = 570053; 
 readAPIkey = 'HHH22NGGTJ8RUYVH';
@@ -21,6 +22,7 @@ readACSuccess = false;
 readPASuccess = false;
 writeHueSuccess = false;
 
+ACdatareaderror = false;
 
 % Read allegheny county air data
 ACAirURL = 'http://www.airnowapi.org/aq/observation/zipCode/current/?format=text/csv&zipCode=15132&distance=25&API_KEY=F7E16FA3-609F-4600-B92A-A1FF4D74CAA1';
@@ -28,29 +30,33 @@ try
 ACAirData = webread(ACAirURL);
 catch
     %tweet about the error
+    ACdatareaderror = true;
     display("got an error reading AC data from airnowapi.org");
 %     myWriteError = 'Error reading AC Air Quality data in Test avg Air quality';
 %     webwrite('http://api.thingspeak.com/apps/thingtweet/1/statuses/update','api_key', '58BKNMMTK8RBV41S', 'status', myWriteError);
     %read back the last good value and use it
 end    
-    
-[rows,cols] = size(ACAirData);
-ACaqi = '1';
+
+if (ACdatareaderror == false)
+    [rows,cols] = size(ACAirData);
+    ACaqi = '1';
     %ACDataRow = ACAirData.ParameterName == 'PM2.5';
-%display(ACAirData); 
-%display(rows,'rows');
-for i = 1:2
-    parmcell = ACAirData{i,'ParameterName'};
-    parmname = parmcell{1};
-    founddata = strcmp(parmname,'PM2.5');
-    display(parmname);
-    if founddata == true
-       ACaqi=cell2mat(ACAirData{i,'AQI'});
+    %display(ACAirData); 
+    %display(rows,'rows');
+    for i = 1:2
+        parmcell = ACAirData{i,'ParameterName'};
+        parmname = parmcell{1};
+        founddata = strcmp(parmname,'PM2.5');
+        %display(parmname);
+        if founddata == true
+           ACaqi=cell2mat(ACAirData{i,'AQI'});
+        end
+        %display('Allegheny County air quality is:');
+        %display(ACaqi);
     end
-    %display('Allegheny County air quality is:');
-    %display(ACaqi);
-end
-readACSuccess = true;
+else
+    ACaqi = '1';
+end    
 ACOutputData = setLights(ACData, ACaqi);
 display(ACOutputData, 'AC data returned from function');
 % Read PM2.5 from purple air channel and calculate AQI category.
@@ -64,7 +70,6 @@ if (isempty(data))
     %tweet it
     avgAQI = 0;
 else
-    %avgAQI = data{1,'PM25ATM'};
     avgAQI = mean(data.PM25ATM); 
 end
 PAOutputData = setLights(PAData, avgAQI);
@@ -73,25 +78,36 @@ mytime = datetime('now','format','MM/dd/uuuu HH:mm:ss');
 OutputTable = {ACOutputData.aqi, ACOutputData.color, PAOutputData.aqi, PAOutputData.color};
 display(OutputTable);
 writeOKAC = thingSpeakWrite(writeChID,OutputTable,'WriteKey',writeAPIKey,'Timestamp',mytime);
-%writeOKPA = thingSpeakWrite(writeChID,PAOutputData,'WriteKey',writeAPIKey,'Timestamp',mytime);
 display(writeOKAC,'AC write status');
-%display(writeOKPA,'PA write status');
 
 %- updateTime;
 %display(atExpires);
 %display(timeStamp);
 %display(elapsedTimeS);
 
-token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1:2],'OutputFormat','table');
-tokenstr = "Bearer "+token{1,2};
-timeStamp = token{1,1};
-atExpires = token{1,3};
+token = thingSpeakRead(663497,'ReadKey','CG5NAREVQN58HIBW','Fields',[1:6],'NumPoints',2,'OutputFormat','table');
+for i=1:2
+    targetcelltest = token{i,7};
+    targettest = string(targetcelltest);
+    %display(targettest,'target');
+    if strcmp(targettest,myTarget)
+        targetIndex = i;
+    end
+end
+
+tokenstr = "Bearer "+token{targetIndex,2};
+timeStamp = token{targetIndex,1};
+atExpires = token{targetIndex,3};
+targetcell = token{targetIndex,7};
+target = string(targetcell);
+display(target,'target');
 %change dates to date vectors
 nowTime = datetime('now');
 nTvec = datevec(nowTime);
 tSvec = datevec(timeStamp);
 %calculate elapsed time since token was granted
 elapsedTimeS = etime(nTvec, tSvec);
+goodToken = false;
 if elapsedTimeS > atExpires
    display("token expired");
    % send a tweet here and renew tokens
@@ -100,12 +116,12 @@ if elapsedTimeS > atExpires
 else
    temptokenarray = ["Authorization", tokenstr;"Content-Type", "application/json" ];
    myhdr = cellstr(temptokenarray)
+   goodToken=true;
 end
 %display(myhdr);
-%need to duplicate this section for second set of lights based on Allegheny County Data
 
 %use this url for kitchen bridge
-%   url = 'https://api.meethue.com/bridge/dhSYOSDfw2LWxJMTMFnq6Tk0eh6rUutAnyAg5Mo8/lights/6/state';
+Kiturl = 'https://api.meethue.com/bridge/dhSYOSDfw2LWxJMTMFnq6Tk0eh6rUutAnyAg5Mo8/lights/6/state';
 %use these urls for McKeesport Twin Rivers Elementary Bridge
 ACurl = 'https://api.meethue.com/bridge/OeZFWJjpUDS9BJTaZRJxlSfrrmrVQurUcemPvawN/lights/2/state';
 PAurl = 'https://api.meethue.com/bridge/OeZFWJjpUDS9BJTaZRJxlSfrrmrVQurUcemPvawN/lights/1/state';
@@ -121,10 +137,21 @@ yPA = PAOutputData.yval;
 ACoutputdata = struct('on', true, 'bri', 200,'xy', [xAC,yAC]);
 PAoutputdata = struct('on', true, 'bri', 200,'xy', [xPA,yPA]);
 %display(ACoutputdata);
-ACresponse = webwrite(ACurl,ACoutputdata,options);
-PAresponse = webwrite(PAurl,PAoutputdata,options); 
-display(ACresponse);
-display(PAresponse);
+if (goodToken==true)
+    if strcmp(target,"McKTRE")
+        if ACdatareaderror == false
+            ACresponse = webwrite(ACurl,ACoutputdata,options);
+            display(ACresponse);
+        end
+            PAresponse = webwrite(PAurl,PAoutputdata,options); 
+            display(PAresponse);         
+    elseif strcmp(target,"Kitchen")
+        Kitresponse = webwrite(Kiturl,PAoutputdata,options);
+        display(Kitresponse);
+    else
+        display('Target not found');
+    end
+end
 
 function DataOutput = setLights(srcIn, valIn); 
     noError = true;
